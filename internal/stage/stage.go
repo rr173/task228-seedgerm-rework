@@ -38,6 +38,13 @@ func (d *Detector) Detect(in DetectInput, stallHours float64) (model.StageEvent,
 	if err != nil {
 		return model.StageEvent{}, err
 	}
+	// 时间线不得回退：晚到的旧观测（occurred_at 早于已记录的较新阶段）不可插入到
+	// 已记录的较新阶段之前。与采集模块对图像时间倒序的处置保持一致。
+	for _, p := range prev {
+		if p.OccurredAt.After(in.CapturedAt) {
+			return model.StageEvent{}, model.ErrTimeReversed
+		}
+	}
 	hasStage := func(s model.GermStage) bool {
 		for _, p := range prev {
 			if p.Stage == s && p.State != model.StageRevoked {
