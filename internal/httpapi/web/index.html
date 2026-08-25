@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>种子萌发证据台</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">Seed Germination Evidence Desk</p>
+      <h1>农业种子萌发时序证据台</h1>
+      <p class="lede">创建试验、登记种子，并把阶段观察和环境证据保存在同一条可追溯时间线上。</p>
+    </header>
+
+    <section class="card">
+      <h2>新建试验</h2>
+      <form id="trial-form">
+        <label>试验编号<input name="code" required placeholder="SPRING-001"></label>
+        <label>试验名称<input name="name" required placeholder="小麦萌发观察"></label>
+        <label>物种<input name="species" required placeholder="小麦"></label>
+        <button type="submit">创建试验</button>
+      </form>
+      <p id="form-status" class="status" role="status"></p>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><h2>最近试验</h2><button id="refresh" class="secondary">刷新</button></div>
+      <div id="trials" class="trials" aria-live="polite">正在读取试验…</div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
