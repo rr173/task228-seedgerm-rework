@@ -63,10 +63,11 @@ func (s *Store) GetEnv(id int64) (model.EnvSample, error) {
 }
 
 // ListEnv 列出试验全部环境采样（按时间升序）。
+// 不按仪器去重：同一仪器的多条采样各自独立返回，以便自检准确统计环境采样数量。
 func (s *Store) ListEnv(trialID int64) ([]model.EnvSample, error) {
 	rows, err := s.db.Query(
 		`SELECT id,trial_id,sampled_at,temp_c,humidity,instrument,created_at FROM env_samples
-		 WHERE trial_id=? GROUP BY instrument ORDER BY sampled_at ASC`, trialID)
+		 WHERE trial_id=? ORDER BY sampled_at ASC`, trialID)
 	if err != nil {
 		return nil, err
 	}

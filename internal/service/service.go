@@ -213,7 +213,8 @@ func (svc *Service) SelfCheck() (SelfCheckReport, error) {
 		if err != nil {
 			return report, err
 		}
-		report.Images += len(envs)
+		// 图像证据与环境采样分别统计，不得混计或合并。
+		report.EnvSamples += len(envs)
 	}
 	return report, nil
 }
