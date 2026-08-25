@@ -27,13 +27,20 @@ type ImageInput struct {
 	Note       string
 }
 
-// IngestImage 录入图像；幂等（同 seed+hash 返回既存且不创建）；时间倒序（早于上次采集）报错。
+// IngestImage 录入图像；幂等（同 seed+hash 返回原证据且不新增记录，即使重试时间戳早于已保存帧）；
+// 时间倒序（真正不同摘要且早于上次采集）报错。
 // 返回 (image, created, error)。
 func (svc *Service) IngestImage(in ImageInput) (model.SeedImage, bool, error) {
 	if in.Hash == "" {
 		return model.SeedImage{}, false, model.ErrBadInput
 	}
-	// 查该种子上一帧采集时间，禁止时间倒序。
+	// 幂等优先：同 seed+hash 视为同一帧的重试，直接返回原证据，不因时间戳早于已保存帧而拒绝。
+	if existing, err := svc.store.GetImageByHash(in.SeedID, in.Hash); err == nil {
+		return existing, false, nil
+	} else if err != model.ErrNotFound {
+		return model.SeedImage{}, false, err
+	}
+	// 真正不同的新摘要：查该种子上一帧采集时间，禁止时间倒序。
 	imgs, err := svc.store.ListImages(in.SeedID)
 	if err != nil {
 		return model.SeedImage{}, false, err
