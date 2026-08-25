@@ -18,12 +18,12 @@ import (
 
 // Service 业务编排服务。
 type Service struct {
-	store   *store.Store
-	Ingest  *ingest.Service
-	Stage   *stage.Detector
-	Enviro  *enviro.Service
-	Review  *review.Service
-	Result  *result.Service
+	store  *store.Store
+	Ingest *ingest.Service
+	Stage  *stage.Detector
+	Enviro *enviro.Service
+	Review *review.Service
+	Result *result.Service
 
 	mu sync.Mutex // 保护同试验的串行判定（如结果合并）
 }
@@ -104,7 +104,26 @@ func (svc *Service) DetectStage(seedID int64, capturedAt time.Time, radicle bool
 
 // ConfirmStage 确认阶段（联动种子状态）。
 func (svc *Service) ConfirmStage(stageID int64) (model.StageEvent, error) {
+	ev, err := svc.store.GetStage(stageID)
+	if err != nil {
+		return model.StageEvent{}, err
+	}
+	seed, err := svc.store.GetSeed(ev.SeedID)
+	if err != nil {
+		return model.StageEvent{}, err
+	}
+	trial, err := svc.store.GetTrial(seed.TrialID)
+	if err != nil {
+		return model.StageEvent{}, err
+	}
+	if trial.State == model.TrialSealed {
+		return model.StageEvent{}, model.ErrSealed
+	}
 	return svc.Stage.Confirm(stageID)
+}
+
+func (svc *Service) EnsureStageBelongsToSeed(stageID, seedID int64) error {
+	return svc.store.EnsureStageBelongsToSeed(stageID, seedID)
 }
 
 // RecordEnv 记录环境采样。

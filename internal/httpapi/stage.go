@@ -53,6 +53,10 @@ func (s *Server) stageResolve(w http.ResponseWriter, r *http.Request, conflictID
 		s.mapErr(w, err)
 		return
 	}
+	if err := s.svc.EnsureStageBelongsToSeed(body.PreferID, seedID); err != nil {
+		s.mapErr(w, err)
+		return
+	}
 	if _, err := s.svc.Review.RevokeStage(conflictID); err != nil {
 		s.mapErr(w, err)
 		return

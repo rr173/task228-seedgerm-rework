@@ -32,6 +32,9 @@ func (svc *Service) ListObservations(seedID int64) ([]model.Observation, error) 
 
 // ConfirmStall 人工确认停滞：将 stagnant 候选事件 confirm，并保留观察记录。
 func (svc *Service) ConfirmStall(seedID, stageID int64, author, note string) (model.StageEvent, error) {
+	if err := svc.store.EnsureStageBelongsToSeed(stageID, seedID); err != nil {
+		return model.StageEvent{}, err
+	}
 	if _, err := svc.AddObservation(seedID, author, note); err != nil {
 		return model.StageEvent{}, err
 	}

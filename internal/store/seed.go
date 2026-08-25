@@ -62,6 +62,12 @@ func (s *Store) UpdateSeedState(id int64, to model.SeedState) (model.Seed, error
 	if err != nil {
 		return seed, err
 	}
+	if !model.ValidSeedState(string(to)) {
+		return model.Seed{}, model.ErrBadInput
+	}
+	if seed.Contam && to != model.SeedContam {
+		return model.Seed{}, model.ErrContamination
+	}
 	now := nowUnix()
 	if _, err := s.db.Exec(`UPDATE seeds SET state=?,updated_at=? WHERE id=?`, string(to), now, id); err != nil {
 		return model.Seed{}, fmt.Errorf("update seed state: %w", err)

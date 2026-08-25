@@ -29,14 +29,19 @@ type DetectInput struct {
 
 // Detect 依据图像特征与既有阶段序列创建候选阶段事件。
 // 规则：
-//  - ContamScore >= 0.7 → polluted（污染）
-//  - RadicleVisible 且尚无 radicle → radicle（胚根出现）
-//  - ColeoptileLen >= 2.0 且尚无 coleoptile → coleoptile（叶鞘展开）
-//  - 距上一 confirmed 阶段超过 stallHours 且无新进展 → stagnant（停滞，仅作候选标记）
+//   - ContamScore >= 0.7 → polluted（污染）
+//   - RadicleVisible 且尚无 radicle → radicle（胚根出现）
+//   - ColeoptileLen >= 2.0 且尚无 coleoptile → coleoptile（叶鞘展开）
+//   - 距上一 confirmed 阶段超过 stallHours 且无新进展 → stagnant（停滞，仅作候选标记）
 func (d *Detector) Detect(in DetectInput, stallHours float64) (model.StageEvent, error) {
 	prev, err := d.store.ListStages(in.SeedID)
 	if err != nil {
 		return model.StageEvent{}, err
+	}
+	for _, p := range prev {
+		if in.CapturedAt.Before(p.OccurredAt) {
+			return model.StageEvent{}, model.ErrTimeReversed
+		}
 	}
 	hasStage := func(s model.GermStage) bool {
 		for _, p := range prev {

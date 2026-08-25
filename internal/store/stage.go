@@ -10,6 +10,14 @@ import (
 
 // CreateStage 创建阶段事件（候选态）。
 func (s *Store) CreateStage(seedID int64, stage model.GermStage, occurredAt time.Time, source string, confidence float64) (model.StageEvent, error) {
+	var latest int64
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(occurred_at),0) FROM stage_events WHERE seed_id=?`, seedID).Scan(&latest)
+	if err != nil {
+		return model.StageEvent{}, fmt.Errorf("latest stage time: %w", err)
+	}
+	if latest > 0 && occurredAt.UnixMilli() < latest {
+		return model.StageEvent{}, model.ErrTimeReversed
+	}
 	now := nowUnix()
 	res, err := s.db.Exec(
 		`INSERT INTO stage_events(seed_id,stage,state,occurred_at,source,confidence,created_at,updated_at)
@@ -62,11 +70,35 @@ func (s *Store) UpdateStageState(id int64, to model.StageEventState) (model.Stag
 	if !model.CanTransitionStage(st.State, to) {
 		return st, model.ErrInvalidState
 	}
+	var trialState string
+	if err := s.db.QueryRow(`SELECT t.state FROM trials t JOIN seeds sd ON sd.trial_id=t.id WHERE sd.id=?`, st.SeedID).Scan(&trialState); err != nil {
+		if err == sql.ErrNoRows {
+			return model.StageEvent{}, model.ErrNotFound
+		}
+		return model.StageEvent{}, err
+	}
+	if trialState == string(model.TrialSealed) {
+		return model.StageEvent{}, model.ErrSealed
+	}
 	now := nowUnix()
 	if _, err := s.db.Exec(`UPDATE stage_events SET state=?,updated_at=? WHERE id=?`, string(to), now, id); err != nil {
 		return model.StageEvent{}, fmt.Errorf("update stage state: %w", err)
 	}
 	return s.GetStage(id)
+}
+
+func (s *Store) EnsureStageBelongsToSeed(stageID, seedID int64) error {
+	var actual int64
+	if err := s.db.QueryRow(`SELECT seed_id FROM stage_events WHERE id=?`, stageID).Scan(&actual); err != nil {
+		if err == sql.ErrNoRows {
+			return model.ErrNotFound
+		}
+		return err
+	}
+	if actual != seedID {
+		return model.ErrConflict
+	}
+	return nil
 }
 
 // LatestConfirmedStage 返回种子最近一个 confirmed 阶段（用于阶段边修订）。
