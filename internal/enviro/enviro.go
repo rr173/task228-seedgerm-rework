@@ -26,12 +26,12 @@ type SampleInput struct {
 	Instrument string
 }
 
-// Record 记录环境采样（幂等，同 trial+sampled_at+instrument 覆盖）。
+// Record 记录环境采样（幂等：同 trial+sampled_at(毫秒精度)+instrument 命中则覆盖该条，
+// 同秒但不同毫秒时间戳视为不同样本，各自保留）。
 func (svc *Service) Record(in SampleInput) (model.EnvSample, error) {
 	if in.Instrument == "" {
 		return model.EnvSample{}, model.ErrUnknownInstrument
 	}
-	in.SampledAt = in.SampledAt.Truncate(time.Second)
 	env, err := svc.store.UpsertEnv(in.TrialID, in.SampledAt, in.TempC, in.Humidity, in.Instrument)
 	if err != nil {
 		return model.EnvSample{}, fmt.Errorf("record env: %w", err)

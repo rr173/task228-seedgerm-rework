@@ -8,13 +8,14 @@ import (
 	"task228-seedgerm/internal/model"
 )
 
-// UpsertEnv 插入或更新某试验某时刻某仪器的环境采样（幂等：同一 trial+sampled_at+instrument 唯一）。
+// UpsertEnv 插入或更新某试验某时刻某仪器的环境采样（幂等：同 trial+sampled_at(毫秒)+instrument 唯一）。
+// 同一秒内不同毫秒时间戳属于不同样本，各自独立保留，互不覆盖。
 func (s *Store) UpsertEnv(trialID int64, sampledAt time.Time, tempC, humidity float64, instrument string) (model.EnvSample, error) {
-	sampledAt = sampledAt.Truncate(time.Second)
+	ts := sampledAt.UTC().UnixMilli()
 	row := s.db.QueryRow(
 		`SELECT id,trial_id,sampled_at,temp_c,humidity,instrument,created_at FROM env_samples
 		 WHERE trial_id=? AND sampled_at=? AND instrument=?`,
-		trialID, sampledAt.UnixMilli(), instrument)
+		trialID, ts, instrument)
 	if err := row.Err(); err != nil {
 		return model.EnvSample{}, err
 	}
@@ -33,13 +34,13 @@ func (s *Store) UpsertEnv(trialID int64, sampledAt time.Time, tempC, humidity fl
 	now := nowUnix()
 	res, err := s.db.Exec(
 		`INSERT INTO env_samples(trial_id,sampled_at,temp_c,humidity,instrument,created_at) VALUES(?,?,?,?,?,?)`,
-		trialID, sampledAt.UnixMilli(), tempC, humidity, instrument, now)
+		trialID, ts, tempC, humidity, instrument, now)
 	if err != nil {
 		if isUniqueErr(err) {
 			r2 := s.db.QueryRow(
 				`SELECT id,trial_id,sampled_at,temp_c,humidity,instrument,created_at FROM env_samples
 				 WHERE trial_id=? AND sampled_at=? AND instrument=?`,
-				trialID, sampledAt.UnixMilli(), instrument)
+				trialID, ts, instrument)
 			env, e2 := scanEnv(r2.Scan)
 			if e2 == nil {
 				return env, nil

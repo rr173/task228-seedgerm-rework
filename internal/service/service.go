@@ -139,7 +139,6 @@ func (svc *Service) RecordEnv(trialID int64, sampledAt time.Time, tempC, humidit
 	if t.State == model.TrialSealed {
 		return model.EnvSample{}, model.ErrSealed
 	}
-	sampledAt = sampledAt.Truncate(time.Second)
 	return svc.Enviro.Record(enviro.SampleInput{TrialID: trialID, SampledAt: sampledAt, TempC: tempC, Humidity: humidity, Instrument: instrument})
 }
 
