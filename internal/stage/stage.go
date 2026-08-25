@@ -97,12 +97,23 @@ func (d *Detector) stalled(prev []model.StageEvent, now time.Time, stallHours fl
 }
 
 // Confirm 确认候选阶段事件（状态 candidate→confirmed），并联动种子状态。
+// 污染不可逆：种子一旦确认污染（contam 标记为真），后续任何阶段确认都不得
+// 清除污染标记或把种子状态从 contaminated 回退到萌发/停滞/观测状态。
 func (d *Detector) Confirm(stageID int64) (model.StageEvent, error) {
 	ev, err := d.store.UpdateStageState(stageID, model.StageConfirmed)
 	if err != nil {
 		return ev, err
 	}
-	// 联动种子状态
+	// 污染证据不可逆：已污染种子不再因新阶段确认而联动状态或清除污染标记，
+	// 仅保留阶段事件自身的确认，种子保持 contaminated。
+	seed, err := d.store.GetSeed(ev.SeedID)
+	if err != nil {
+		return ev, err
+	}
+	if seed.Contam {
+		return ev, nil
+	}
+	// 联动种子状态（仅未污染种子）
 	var seedState model.SeedState
 	switch ev.Stage {
 	case model.StageRadicle, model.StageColeoptile:
@@ -116,11 +127,6 @@ func (d *Detector) Confirm(stageID int64) (model.StageEvent, error) {
 	}
 	if _, err := d.store.UpdateSeedState(ev.SeedID, seedState); err != nil {
 		return ev, err
-	}
-	if seedState != model.SeedContam {
-		if err := d.store.MarkSeedContam(ev.SeedID, false); err != nil {
-			return ev, err
-		}
 	}
 	if seedState == model.SeedContam {
 		if err := d.store.MarkSeedContam(ev.SeedID, true); err != nil {
