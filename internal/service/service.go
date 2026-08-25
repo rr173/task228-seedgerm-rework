@@ -50,48 +50,26 @@ func (svc *Service) TransitionTrial(id int64, to model.TrialState) (model.Trial,
 	return svc.store.UpdateTrialState(id, to)
 }
 
-// CreateSeed 创建种子。
+// CreateSeed 创建种子。封存试验拒绝创建。
 func (svc *Service) CreateSeed(trialID int64, seedNo string) (model.Seed, error) {
-	// 封存试验禁止修改
-	t, err := svc.store.GetTrial(trialID)
-	if err != nil {
+	if err := svc.assertTrialNotSealed(trialID); err != nil {
 		return model.Seed{}, err
-	}
-	if t.State == model.TrialSealed {
-		return model.Seed{}, model.ErrSealed
 	}
 	return svc.store.CreateSeed(trialID, seedNo, model.SeedPending)
 }
 
-// IngestImage 录入图像（委托采集模块）。
+// IngestImage 录入图像（委托采集模块）。封存试验拒绝修改。
 func (svc *Service) IngestImage(seedID int64, hash string, capturedAt time.Time, w, h int, note string) (model.SeedImage, bool, error) {
-	// 封存试验禁止修改
-	seed, err := svc.store.GetSeed(seedID)
-	if err != nil {
+	if err := svc.assertSeedNotSealed(seedID); err != nil {
 		return model.SeedImage{}, false, err
-	}
-	t, err := svc.store.GetTrial(seed.TrialID)
-	if err != nil {
-		return model.SeedImage{}, false, err
-	}
-	if t.State == model.TrialSealed {
-		return model.SeedImage{}, false, model.ErrSealed
 	}
 	return svc.Ingest.IngestImage(ingest.ImageInput{SeedID: seedID, Hash: hash, CapturedAt: capturedAt, Width: w, Height: h, Note: note})
 }
 
-// DetectStage 检测阶段（委托阶段模块）。
+// DetectStage 检测阶段（委托阶段模块）。封存试验拒绝新增候选事件。
 func (svc *Service) DetectStage(seedID int64, capturedAt time.Time, radicle bool, coleoptileLen, contamScore float64, stallHours float64) (model.StageEvent, error) {
-	seed, err := svc.store.GetSeed(seedID)
-	if err != nil {
+	if err := svc.assertSeedNotSealed(seedID); err != nil {
 		return model.StageEvent{}, err
-	}
-	t, err := svc.store.GetTrial(seed.TrialID)
-	if err != nil {
-		return model.StageEvent{}, err
-	}
-	if t.State == model.TrialSealed {
-		return model.StageEvent{}, model.ErrSealed
 	}
 	return svc.Stage.Detect(stage.DetectInput{
 		SeedID:         seedID,
@@ -102,8 +80,11 @@ func (svc *Service) DetectStage(seedID int64, capturedAt time.Time, radicle bool
 	}, stallHours)
 }
 
-// ConfirmStage 确认阶段（联动种子状态）。
+// ConfirmStage 确认阶段（联动种子状态）。封存试验拒绝确认，候选事件保持不变。
 func (svc *Service) ConfirmStage(stageID int64) (model.StageEvent, error) {
+	if err := svc.assertStageNotSealed(stageID); err != nil {
+		return model.StageEvent{}, err
+	}
 	return svc.Stage.Confirm(stageID)
 }
 
@@ -111,42 +92,74 @@ func (svc *Service) EnsureStageBelongsToSeed(stageID, seedID int64) error {
 	return svc.store.EnsureStageBelongsToSeed(stageID, seedID)
 }
 
+// ResolveStageConflict 处理冲突（revoke 冲突事件并 confirm 偏好事件）。封存试验拒绝。
 func (svc *Service) ResolveStageConflict(conflictID, preferID int64) (model.StageEvent, error) {
+	if err := svc.assertStageNotSealed(conflictID); err != nil {
+		return model.StageEvent{}, err
+	}
 	return svc.Review.ResolveConflict(conflictID, preferID)
 }
 
-// RecordEnv 记录环境采样。
-func (svc *Service) RecordEnv(trialID int64, sampledAt time.Time, tempC, humidity float64, instrument string) (model.EnvSample, error) {
+// assertTrialNotSealed 若试验已封存则返回 ErrSealed，用于在变更前拦截子资源修改。
+func (svc *Service) assertTrialNotSealed(trialID int64) error {
 	t, err := svc.store.GetTrial(trialID)
 	if err != nil {
-		return model.EnvSample{}, err
+		return err
 	}
 	if t.State == model.TrialSealed {
-		return model.EnvSample{}, model.ErrSealed
+		return model.ErrSealed
+	}
+	return nil
+}
+
+// assertSeedNotSealed 通过种子定位所属试验并校验封存。
+func (svc *Service) assertSeedNotSealed(seedID int64) error {
+	seed, err := svc.store.GetSeed(seedID)
+	if err != nil {
+		return err
+	}
+	return svc.assertTrialNotSealed(seed.TrialID)
+}
+
+// assertStageNotSealed 通过阶段事件定位所属试验并校验封存。
+func (svc *Service) assertStageNotSealed(stageID int64) error {
+	ev, err := svc.store.GetStage(stageID)
+	if err != nil {
+		return err
+	}
+	return svc.assertSeedNotSealed(ev.SeedID)
+}
+
+// RecordEnv 记录环境采样。封存试验拒绝修改。
+func (svc *Service) RecordEnv(trialID int64, sampledAt time.Time, tempC, humidity float64, instrument string) (model.EnvSample, error) {
+	if err := svc.assertTrialNotSealed(trialID); err != nil {
+		return model.EnvSample{}, err
 	}
 	return svc.Enviro.Record(enviro.SampleInput{TrialID: trialID, SampledAt: sampledAt, TempC: tempC, Humidity: humidity, Instrument: instrument})
 }
 
-// AddObservation 添加人工观察。
+// AddObservation 添加人工观察。封存试验拒绝修改。
 func (svc *Service) AddObservation(seedID int64, author, note string) (model.Observation, error) {
+	if err := svc.assertSeedNotSealed(seedID); err != nil {
+		return model.Observation{}, err
+	}
 	return svc.Review.AddObservation(seedID, author, note)
 }
 
-// ConfirmStall 人工确认停滞。
+// ConfirmStall 人工确认停滞。封存试验拒绝确认，候选事件保持不变。
 func (svc *Service) ConfirmStall(seedID, stageID int64, author, note string) (model.StageEvent, error) {
+	if err := svc.assertSeedNotSealed(seedID); err != nil {
+		return model.StageEvent{}, err
+	}
 	return svc.Review.ConfirmStall(seedID, stageID, author, note)
 }
 
-// DraftResult 起草结果（串行合并保护）。
+// DraftResult 起草结果（串行合并保护）。封存试验拒绝起草。
 func (svc *Service) DraftResult(trialID int64, summary string) (model.TrialResult, error) {
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
-	t, err := svc.store.GetTrial(trialID)
-	if err != nil {
+	if err := svc.assertTrialNotSealed(trialID); err != nil {
 		return model.TrialResult{}, err
-	}
-	if t.State == model.TrialSealed {
-		return model.TrialResult{}, model.ErrSealed
 	}
 	return svc.Result.Draft(trialID, summary)
 }
@@ -163,8 +176,15 @@ func (svc *Service) Summarize(trialID int64) (result.Summary, error) {
 	return svc.Result.Summarize(trialID)
 }
 
-// DeleteImage 删除图像证据（污染种子拒绝，由 store 把关）。
+// DeleteImage 删除图像证据。封存试验拒绝修改，污染种子拒绝（由 store 把关）。
 func (svc *Service) DeleteImage(imageID int64) error {
+	img, err := svc.store.GetImage(imageID)
+	if err != nil {
+		return err
+	}
+	if err := svc.assertSeedNotSealed(img.SeedID); err != nil {
+		return err
+	}
 	return svc.store.DeleteImage(imageID)
 }
 

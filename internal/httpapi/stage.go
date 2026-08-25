@@ -27,7 +27,7 @@ func (s *Server) stageConfirm(w http.ResponseWriter, r *http.Request, id int64) 
 		writeError(w, http.StatusMethodNotAllowed, model.ErrBadInput)
 		return
 	}
-	ev, err := s.svc.Stage.Confirm(id)
+	ev, err := s.svc.ConfirmStage(id)
 	if err != nil {
 		s.mapErr(w, err)
 		return
