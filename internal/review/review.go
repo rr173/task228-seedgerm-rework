@@ -53,3 +53,11 @@ func (svc *Service) RevokeStage(stageID int64) (model.StageEvent, error) {
 	}
 	return ev, nil
 }
+
+func (svc *Service) ResolveConflict(conflictID, preferID int64) (model.StageEvent, error) {
+	ev, err := svc.store.ResolveStageConflict(conflictID, preferID)
+	if err != nil {
+		return model.StageEvent{}, fmt.Errorf("resolve conflict: %w", err)
+	}
+	return ev, nil
+}

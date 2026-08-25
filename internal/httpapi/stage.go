@@ -53,19 +53,9 @@ func (s *Server) stageResolve(w http.ResponseWriter, r *http.Request, conflictID
 		s.mapErr(w, err)
 		return
 	}
-	if err := s.svc.EnsureStageBelongsToSeed(body.PreferID, seedID); err != nil {
+	if _, err := s.svc.ResolveStageConflict(conflictID, body.PreferID); err != nil {
 		s.mapErr(w, err)
 		return
-	}
-	if _, err := s.svc.Review.RevokeStage(conflictID); err != nil {
-		s.mapErr(w, err)
-		return
-	}
-	if body.PreferID != conflictID {
-		if _, err := s.svc.ConfirmStage(body.PreferID); err != nil {
-			s.mapErr(w, err)
-			return
-		}
 	}
 	writeJSON(w, http.StatusOK, map[string]int64{"seed_id": seedID})
 }

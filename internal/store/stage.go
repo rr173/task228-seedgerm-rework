@@ -101,6 +101,45 @@ func (s *Store) EnsureStageBelongsToSeed(stageID, seedID int64) error {
 	return nil
 }
 
+func (s *Store) ResolveStageConflict(conflictID, preferID int64) (model.StageEvent, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.StageEvent{}, err
+	}
+	defer tx.Rollback()
+	var conflictSeed, preferSeed int64
+	var conflictState, preferState string
+	if err := tx.QueryRow(`SELECT seed_id,state FROM stage_events WHERE id=?`, conflictID).Scan(&conflictSeed, &conflictState); err != nil {
+		if err == sql.ErrNoRows {
+			return model.StageEvent{}, model.ErrNotFound
+		}
+		return model.StageEvent{}, err
+	}
+	if err := tx.QueryRow(`SELECT seed_id,state FROM stage_events WHERE id=?`, preferID).Scan(&preferSeed, &preferState); err != nil {
+		if err == sql.ErrNoRows {
+			return model.StageEvent{}, model.ErrNotFound
+		}
+		return model.StageEvent{}, err
+	}
+	if conflictSeed != preferSeed {
+		return model.StageEvent{}, model.ErrConflict
+	}
+	if !model.CanTransitionStage(model.StageEventState(conflictState), model.StageRevoked) || !model.CanTransitionStage(model.StageEventState(preferState), model.StageConfirmed) {
+		return model.StageEvent{}, model.ErrInvalidState
+	}
+	now := nowUnix()
+	if _, err := tx.Exec(`UPDATE stage_events SET state=?,updated_at=? WHERE id=?`, string(model.StageRevoked), now, conflictID); err != nil {
+		return model.StageEvent{}, err
+	}
+	if _, err := tx.Exec(`UPDATE stage_events SET state=?,updated_at=? WHERE id=?`, string(model.StageConfirmed), now, preferID); err != nil {
+		return model.StageEvent{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.StageEvent{}, err
+	}
+	return s.GetStage(preferID)
+}
+
 // LatestConfirmedStage 返回种子最近一个 confirmed 阶段（用于阶段边修订）。
 func (s *Store) LatestConfirmedStage(seedID int64) (model.StageEvent, error) {
 	row := s.db.QueryRow(

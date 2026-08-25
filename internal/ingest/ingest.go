@@ -33,6 +33,11 @@ func (svc *Service) IngestImage(in ImageInput) (model.SeedImage, bool, error) {
 	if in.Hash == "" {
 		return model.SeedImage{}, false, model.ErrBadInput
 	}
+	if existing, err := svc.store.GetImageByHash(in.SeedID, in.Hash); err == nil {
+		return existing, false, nil
+	} else if err != model.ErrNotFound {
+		return model.SeedImage{}, false, err
+	}
 	// 查该种子上一帧采集时间，禁止时间倒序。
 	imgs, err := svc.store.ListImages(in.SeedID)
 	if err != nil {

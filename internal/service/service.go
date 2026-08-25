@@ -126,6 +126,10 @@ func (svc *Service) EnsureStageBelongsToSeed(stageID, seedID int64) error {
 	return svc.store.EnsureStageBelongsToSeed(stageID, seedID)
 }
 
+func (svc *Service) ResolveStageConflict(conflictID, preferID int64) (model.StageEvent, error) {
+	return svc.Review.ResolveConflict(conflictID, preferID)
+}
+
 // RecordEnv 记录环境采样。
 func (svc *Service) RecordEnv(trialID int64, sampledAt time.Time, tempC, humidity float64, instrument string) (model.EnvSample, error) {
 	t, err := svc.store.GetTrial(trialID)

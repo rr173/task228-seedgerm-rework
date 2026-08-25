@@ -59,6 +59,17 @@ func (s *Store) GetImage(id int64) (model.SeedImage, error) {
 	return img, err
 }
 
+func (s *Store) GetImageByHash(seedID int64, hash string) (model.SeedImage, error) {
+	row := s.db.QueryRow(
+		`SELECT id,seed_id,hash,captured_at,width,height,note,created_at FROM seed_images WHERE seed_id=? AND hash=?`,
+		seedID, hash)
+	img, err := scanImage(row.Scan)
+	if err == sql.ErrNoRows {
+		return model.SeedImage{}, model.ErrNotFound
+	}
+	return img, err
+}
+
 // ListImages 列出种子全部图像（按采集时间升序）。
 func (s *Store) ListImages(seedID int64) ([]model.SeedImage, error) {
 	rows, err := s.db.Query(
