@@ -3,7 +3,6 @@ package result
 
 import (
 	"fmt"
-	"runtime"
 
 	"task228-seedgerm/internal/model"
 	"task228-seedgerm/internal/store"
@@ -61,17 +60,11 @@ func (svc *Service) Summarize(trialID int64) (Summary, error) {
 }
 
 // Draft 基于摘要创建草稿结果版本。新增图片只生成替代版本（旧的置 superseded）。
+//
+// 版本号分配与插入在同一个事务内原子完成，借助 SetMaxOpenConns(1) 的写串行化，
+// 保证并发起草同一试验时版本号连续且唯一、所有请求都成功，并形成完整版本链。
 func (svc *Service) Draft(trialID int64, summary string) (model.TrialResult, error) {
-	ver, err := svc.store.NextResultVersion(trialID)
-	if err != nil {
-		return model.TrialResult{}, err
-	}
-	runtime.Gosched()
-	prev := 0
-	if ver > 1 {
-		prev = ver - 1
-	}
-	r, err := svc.store.CreateResult(trialID, ver, summary, prev)
+	r, err := svc.store.CreateResultNext(trialID, summary)
 	if err != nil {
 		return model.TrialResult{}, fmt.Errorf("draft result: %w", err)
 	}
