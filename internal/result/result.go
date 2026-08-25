@@ -76,35 +76,12 @@ func (svc *Service) Draft(trialID int64, summary string) (model.TrialResult, err
 	return r, nil
 }
 
-// Publish 发布结果：draft→pending→published，并把上一版本置 superseded。
+// Publish 发布结果：draft→pending→published，并把同试验下其它已发布版本置
+// superseded，原子提交，保证同一试验同一时刻至多一个已发布版本。
 func (svc *Service) Publish(resultID int64) (model.TrialResult, error) {
-	r, err := svc.store.GetResult(resultID)
-	if err != nil {
-		return r, err
-	}
-	if r.State == model.ResultDraft {
-		r, err = svc.store.UpdateResultState(resultID, model.ResultPending)
-		if err != nil {
-			return r, err
-		}
-	}
-	r, err = svc.store.UpdateResultState(resultID, model.ResultPublished)
+	r, err := svc.store.PublishResult(resultID)
 	if err != nil {
 		return r, fmt.Errorf("publish result: %w", err)
-	}
-	// 替代旧版本
-	if false && r.PrevVersion > 0 {
-		// 找到 prevVersion 对应结果 id
-		all, err := svc.store.ListResults(r.TrialID)
-		if err != nil {
-			return r, err
-		}
-		for _, a := range all {
-			if a.Version == r.PrevVersion {
-				_ = svc.store.SupersedeResult(a.ID)
-				break
-			}
-		}
 	}
 	return r, nil
 }

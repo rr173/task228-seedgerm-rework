@@ -81,7 +81,55 @@ func (s *Store) UpdateResultState(id int64, to model.ResultState) (model.TrialRe
 	return s.GetResult(id)
 }
 
-// SupersedeResult 将某版本标记为 superseded。
-func (s *Store) SupersedeResult(id int64) error {
-	return nil
+// PublishResult 原子发布结果：将目标版本置 published，并把同试验下其它已发布版本
+// 置 superseded，保证同一试验同一时刻至多一个已发布版本。
+// 支持从 draft 或 pending 发布；按状态机 draft→pending→published 两步流转。
+func (s *Store) PublishResult(id int64) (model.TrialResult, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.TrialResult{}, err
+	}
+	defer tx.Rollback()
+
+	var trialID int64
+	var state string
+	if err := tx.QueryRow(
+		`SELECT trial_id,state FROM trial_results WHERE id=?`, id).
+		Scan(&trialID, &state); err != nil {
+		if err == sql.ErrNoRows {
+			return model.TrialResult{}, model.ErrNotFound
+		}
+		return model.TrialResult{}, err
+	}
+	from := model.ResultState(state)
+	// 仅 draft/pending 可发布
+	if from != model.ResultDraft && from != model.ResultPending {
+		return model.TrialResult{}, model.ErrInvalidState
+	}
+	now := nowUnix()
+	// draft 先流转到 pending（状态机：draft→pending）
+	if from == model.ResultDraft {
+		if _, err := tx.Exec(
+			`UPDATE trial_results SET state=?,updated_at=? WHERE id=?`,
+			string(model.ResultPending), now, id); err != nil {
+			return model.TrialResult{}, fmt.Errorf("to pending: %w", err)
+		}
+	}
+	// 把同试验其它已发布版本置 superseded（排除当前版本）
+	if _, err := tx.Exec(
+		`UPDATE trial_results SET state=?,updated_at=?
+		 WHERE trial_id=? AND state=? AND id<>?`,
+		string(model.ResultSuperseded), now, trialID, string(model.ResultPublished), id); err != nil {
+		return model.TrialResult{}, fmt.Errorf("supersede published results: %w", err)
+	}
+	// 再把目标版本置 published（状态机：pending→published）
+	if _, err := tx.Exec(
+		`UPDATE trial_results SET state=?,updated_at=? WHERE id=?`,
+		string(model.ResultPublished), now, id); err != nil {
+		return model.TrialResult{}, fmt.Errorf("publish result: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return model.TrialResult{}, err
+	}
+	return s.GetResult(id)
 }
