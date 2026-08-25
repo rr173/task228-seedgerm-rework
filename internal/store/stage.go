@@ -87,7 +87,21 @@ func (s *Store) UpdateStageState(id int64, to model.StageEventState) (model.Stag
 	return s.GetStage(id)
 }
 
+// EnsureStageBelongsToSeed 校验阶段事件确实属于指定种子。
+// 同一实体关系的跨 ID 操作必须拒绝：把 A 种子的 stageID 配到 B 种子上属于跨种子组合，
+// 返回 ErrConflict；阶段不存在返回 ErrNotFound。
 func (s *Store) EnsureStageBelongsToSeed(stageID, seedID int64) error {
+	var got int64
+	err := s.db.QueryRow(`SELECT seed_id FROM stage_events WHERE id=?`, stageID).Scan(&got)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return model.ErrNotFound
+		}
+		return err
+	}
+	if got != seedID {
+		return model.ErrConflict
+	}
 	return nil
 }
 

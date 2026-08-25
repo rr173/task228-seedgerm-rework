@@ -147,8 +147,12 @@ func (svc *Service) AddObservation(seedID int64, author, note string) (model.Obs
 	return svc.Review.AddObservation(seedID, author, note)
 }
 
-// ConfirmStall 人工确认停滞。
+// ConfirmStall 人工确认停滞：阶段事件必须属于请求中的同一粒种子，
+// 跨种子 ID 组合被拒绝且不留下错误的人工观察。
 func (svc *Service) ConfirmStall(seedID, stageID int64, author, note string) (model.StageEvent, error) {
+	if err := svc.store.EnsureStageBelongsToSeed(stageID, seedID); err != nil {
+		return model.StageEvent{}, err
+	}
 	return svc.Review.ConfirmStall(seedID, stageID, author, note)
 }
 
